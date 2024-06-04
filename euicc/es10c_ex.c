@@ -1,4 +1,6 @@
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 #include "euicc.private.h"
 #include "es10c_ex.h"
 

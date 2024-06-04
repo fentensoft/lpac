@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <inttypes.h>
 
 #include <cjson/cJSON_ex.h>
 
@@ -66,7 +67,7 @@ static int es9p_trans_ex(struct euicc_ctx *ctx, const char *url, const char *url
     }
     if (getenv("LIBEUICC_DEBUG_HTTP"))
     {
-        fprintf(stderr, "[DEBUG] [HTTP] [RX] rcode: %d, data: %s\n", rcode_mearged, rbuf);
+        fprintf(stderr, "[DEBUG] [HTTP] [RX] rcode: %" PRIu32 ", data: %s\n", rcode_mearged, rbuf);
     }
 
     free(full_url);
@@ -145,7 +146,7 @@ static int es9p_trans_json(struct euicc_ctx *ctx, const char *smdp, const char *
     {
         strncpy(ctx->http.status.reasonCode, "0.0.0", sizeof(ctx->http.status.reasonCode));
         strncpy(ctx->http.status.subjectCode, "0.0.0", sizeof(ctx->http.status.subjectCode));
-        snprintf(ctx->http.status.subjectIdentifier, sizeof(ctx->http.status.subjectIdentifier), "%d", rcode);
+        snprintf(ctx->http.status.subjectIdentifier, sizeof(ctx->http.status.subjectIdentifier), "%" PRIu32, rcode);
         strncpy(ctx->http.status.message, "HTTP status code error", sizeof(ctx->http.status.message));
         goto err;
     }

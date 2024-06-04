@@ -15,14 +15,27 @@
 #ifdef LPAC_WITH_APDU_PCSC
 #include "driver/apdu/pcsc.h"
 #endif
+
 #ifdef LPAC_WITH_APDU_AT
 #include "driver/apdu/at.h"
 #endif
+
+#ifdef LPAC_WITH_APDU_ESPIDF
+#include "driver/apdu/espidf.h"
+#endif
+
 #ifdef LPAC_WITH_HTTP_CURL
 #include "driver/http/curl.h"
 #endif
+
+#ifdef LPAC_WITH_HTTP_ESPIDF
+#include "driver/http/espidf.h"
+#endif
+
+#ifndef LPAC_WITHOUT_DEFAULE_DRIVERS
 #include "driver/apdu/stdio.h"
 #include "driver/http/stdio.h"
+#endif
 
 static const struct euicc_driver *drivers[] = {
 #ifdef LPAC_WITH_APDU_GBINDER
@@ -37,11 +50,19 @@ static const struct euicc_driver *drivers[] = {
 #ifdef LPAC_WITH_APDU_AT
     &driver_apdu_at,
 #endif
+#ifdef LPAC_WITH_APDU_ESPIDF
+    &driver_apdu_espidf,
+#endif
 #ifdef LPAC_WITH_HTTP_CURL
     &driver_http_curl,
 #endif
+#ifdef LPAC_WITH_HTTP_ESPIDF
+    &driver_http_espidf,
+#endif
+#ifndef LPAC_WITHOUT_DEFAULE_DRIVERS
     &driver_apdu_stdio,
     &driver_http_stdio,
+#endif
     NULL,
 };
 
