@@ -1,5 +1,9 @@
 #include "espidf.h"
 
+#include <esp_http_client.h>
+#include <esp_log.h>
+#include <esp_spiffs.h>
+#include <esp_tls.h>
 #include <euicc/interface.h>
 #include <inttypes.h>
 #include <stdio.h>
@@ -7,15 +11,13 @@
 #include <string.h>
 #include <sys/param.h>
 
-#include "esp_http_client.h"
-#include "esp_log.h"
-#include "esp_tls.h"
-
 #define TAG "http_driver_espidf"
 
 static char *output_buffer = NULL;
 static uint32_t output_len = 0;
 static uint32_t receive_len = 0;
+static unsigned char *certs_buf = NULL;
+static size_t certs_buf_len = 0;
 
 esp_err_t _http_event_handler(esp_http_client_event_t *evt) {
     switch (evt->event_id) {
@@ -88,6 +90,10 @@ static int transmit(struct euicc_ctx *ctx, const char *url, uint32_t *rcode,
     config.url = url;
     config.event_handler = _http_event_handler;
     config.timeout_ms = 60000;
+    if (certs_buf != NULL) {
+        config.cert_pem = (char *)certs_buf;
+        config.cert_len = certs_buf_len;
+    }
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
 
@@ -159,12 +165,43 @@ static int transmit(struct euicc_ctx *ctx, const char *url, uint32_t *rcode,
 static int espidf_httpinterface_init(struct euicc_http_interface *ifstruct) {
     memset(ifstruct, 0, sizeof(struct euicc_http_interface));
     ifstruct->transmit = transmit;
+
+    esp_vfs_spiffs_conf_t conf = {.base_path = "/storage",
+                                  .partition_label = NULL,
+                                  .max_files = 2,
+                                  .format_if_mount_failed = false};
+    esp_err_t ret = esp_vfs_spiffs_register(&conf);
+
+    if (ret == ESP_OK) {
+        FILE *f = fopen("/storage/gsma_certs.pem", "r");
+        if (f != NULL) {
+            fseek(f, 0, SEEK_END);
+            certs_buf_len = ftell(f);
+            certs_buf = malloc(certs_buf_len + 1);
+            fseek(f, 0, SEEK_SET);
+            fread(certs_buf, 1, certs_buf_len, f);
+            fclose(f);
+            certs_buf[certs_buf_len] = 0;
+            certs_buf_len += 1;
+            ESP_LOGI(TAG, "GSMA CA certificates loaded, size=%d", certs_buf_len);
+        }
+    }
     return 0;
 }
 
 static int espidf_httpinterface_main(int argc, char **argv) { return 0; }
 
-static void espidf_httpinterface_fini(void) {}
+static void espidf_httpinterface_fini(void) {
+    if (output_buffer != NULL) {
+        free(output_buffer);
+        output_buffer = NULL;
+    }
+    if (certs_buf != NULL) {
+        free(certs_buf);
+        certs_buf = NULL;
+        esp_vfs_spiffs_unregister(NULL);
+    }
+}
 
 const struct euicc_driver driver_http_espidf = {
     .type = DRIVER_HTTP,
