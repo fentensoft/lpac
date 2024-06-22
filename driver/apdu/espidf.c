@@ -1,22 +1,18 @@
 #include "espidf.h"
 
+#include <arpa/inet.h>
 #include <driver/gpio.h>
 #include <driver/uart.h>
 #include <esp_log.h>
+#include <euicc/interface.h>
 #include <freertos/FreeRTOS.h>
 #include <stdio.h>
 #include <string.h>
 
-#include "euicc/interface.h"
-#include "hal/gpio_types.h"
-#include "hal/uart_types.h"
-#include "portmacro.h"
-#include <lwip/sockets.h>
-
-#define SIM_ON_PIN GPIO_NUM_7
+#define SIM_ON_PIN GPIO_NUM_13
 #define RESET_PIN GPIO_NUM_10
-#define RX_PIN GPIO_NUM_1
-#define TX_PIN GPIO_NUM_0
+#define RX_PIN GPIO_NUM_12
+#define TX_PIN GPIO_NUM_11
 #define TAG "apdu_driver_espidf"
 
 #define EUICC_INTERFACE_BUFSZ 264
@@ -30,11 +26,11 @@
 static void _reset_card() {
     // First deactivation
     gpio_set_level(RESET_PIN, 0);
-    gpio_set_level(SIM_ON_PIN, 1);
+    gpio_set_level(SIM_ON_PIN, 0);
     vTaskDelay(100 / portTICK_PERIOD_MS);
 
     // Cold reset
-    gpio_set_level(SIM_ON_PIN, 0);
+    gpio_set_level(SIM_ON_PIN, 1);
     vTaskDelay(10 / portTICK_PERIOD_MS);
     uart_flush(UART_NUM_1);
     gpio_set_level(RESET_PIN, 1);
@@ -69,8 +65,10 @@ static int _transmit_raw(uint8_t *rx, uint32_t *rx_len, const uint8_t *tx,
         ESP_LOGE(TAG, "Invalid APDU command");
         return -1;
     }
-    ESP_LOGD(TAG, "Sending APDU command header: %02X %02X %02X %02X %02X, Tx len: %d",
-             tx[0], tx[1], tx[2], tx[3], tx[4], tx_len);
+    ESP_LOGD(
+        TAG,
+        "Sending APDU command header: %02X %02X %02X %02X %02X, Tx len: %d",
+        tx[0], tx[1], tx[2], tx[3], tx[4], tx_len);
     if (_send_and_clear_echo(tx, 5) != 0) {
         ESP_LOGE(TAG, "Fail to transmit APDU command header");
         return -1;
@@ -129,7 +127,7 @@ static int _transmit_raw(uint8_t *rx, uint32_t *rx_len, const uint8_t *tx,
             uint16_t lc = ntohs(*(uint16_t *)(tx + 5));
             if (lc != body_len - 3 && lc != body_len - 5) {
                 to_recv = 65535;
-            } else if (tx_len == 7 + lc){
+            } else if (tx_len == 7 + lc) {
                 // HEADER | LC | DATA
                 to_recv = 2;
             } else {
@@ -141,7 +139,7 @@ static int _transmit_raw(uint8_t *rx, uint32_t *rx_len, const uint8_t *tx,
                 }
             }
         }
-    } else if (tx_len == 5){
+    } else if (tx_len == 5) {
         // HEADER | LE
         to_recv = tx[4];
         if (to_recv == 0) {
@@ -176,7 +174,7 @@ static int _transmit_raw(uint8_t *rx, uint32_t *rx_len, const uint8_t *tx,
             }
         }
     }
-    
+
     ESP_LOGD(TAG, "To receive: %d", to_recv);
     *rx_len = 0;
     int has_recv = 0;
@@ -283,7 +281,10 @@ static int apdu_interface_connect(struct euicc_ctx *ctx) {
     return -1;
 }
 
-static void apdu_interface_disconnect(struct euicc_ctx *ctx) {}
+static void apdu_interface_disconnect(struct euicc_ctx *ctx) {
+    gpio_set_level(RESET_PIN, 0);
+    gpio_set_level(SIM_ON_PIN, 0);
+}
 
 static int apdu_interface_logic_channel_open(struct euicc_ctx *ctx,
                                              const uint8_t *aid,
@@ -362,7 +363,17 @@ static int apdu_interface_transmit(struct euicc_ctx *ctx, uint8_t **rx,
 }
 
 static int libapduinterface_init(struct euicc_apdu_interface *ifstruct) {
+    // GPIO configuration for reset card and sim on
+    gpio_set_direction(SIM_ON_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_pull_mode(SIM_ON_PIN, GPIO_FLOATING);
+    gpio_set_level(SIM_ON_PIN, 0);
+    gpio_set_direction(RESET_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_pull_mode(RESET_PIN, GPIO_FLOATING);
+    gpio_set_level(RESET_PIN, 0);
+    gpio_set_direction(TX_PIN, GPIO_MODE_INPUT_OUTPUT_OD);
+
     // UART configuration
+    ESP_LOGD(TAG, "Initializing UART");
     const uart_config_t uart_config = {.baud_rate = 9600,
                                        .data_bits = UART_DATA_8_BITS,
                                        .parity = UART_PARITY_EVEN,
@@ -372,14 +383,7 @@ static int libapduinterface_init(struct euicc_apdu_interface *ifstruct) {
     uart_set_pin(UART_NUM_1, TX_PIN, RX_PIN, UART_PIN_NO_CHANGE,
                  UART_PIN_NO_CHANGE);
     uart_driver_install(UART_NUM_1, EUICC_INTERFACE_BUFSZ * 2, 0, 0, NULL, 0);
-
-    // GPIO configuration for reset card and sim on
-    gpio_set_direction(SIM_ON_PIN, GPIO_MODE_OUTPUT);
-    gpio_set_pull_mode(SIM_ON_PIN, GPIO_PULLUP_ONLY);
-    gpio_set_level(SIM_ON_PIN, 1);
-    gpio_set_direction(RESET_PIN, GPIO_MODE_OUTPUT);
-    gpio_set_pull_mode(RESET_PIN, GPIO_PULLUP_ONLY);
-    gpio_set_level(RESET_PIN, 0);
+    ESP_LOGD(TAG, "UART initialized");
 
     memset(ifstruct, 0, sizeof(struct euicc_apdu_interface));
 

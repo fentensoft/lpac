@@ -38,7 +38,8 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt) {
             ESP_LOGD(TAG, "HTTP_EVENT_ON_DATA, len=%d", evt->data_len);
             receive_len += evt->data_len;
             if (output_buffer == NULL) {
-                output_buffer = (char *)malloc(evt->data_len + 1);
+                output_buffer = (char *)heap_caps_malloc(evt->data_len + 1,
+                                                         MALLOC_CAP_SPIRAM);
                 output_len = 0;
                 if (output_buffer == NULL) {
                     ESP_LOGE(TAG,
@@ -48,8 +49,9 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt) {
                     return ESP_FAIL;
                 }
             } else {
-                output_buffer =
-                    realloc(output_buffer, output_len + evt->data_len + 1);
+                output_buffer = heap_caps_realloc(
+                    output_buffer, output_len + evt->data_len + 1,
+                    MALLOC_CAP_SPIRAM);
                 if (output_buffer == NULL) {
                     ESP_LOGE(TAG,
                              "Failed to reallocate memory for output "
@@ -110,8 +112,7 @@ static int transmit(struct euicc_ctx *ctx, const char *url, uint32_t *rcode,
             strncpy(key, h[i], key_length);
             key[key_length] = '\0';
 
-            const char *value =
-                delimiter + 2;  // 假设值与键之间有一个冒号和一个空格
+            const char *value = delimiter + 2;
 
             esp_http_client_set_header(client, key, value);
         }
@@ -183,7 +184,8 @@ static int espidf_httpinterface_init(struct euicc_http_interface *ifstruct) {
             fclose(f);
             certs_buf[certs_buf_len] = 0;
             certs_buf_len += 1;
-            ESP_LOGI(TAG, "GSMA CA certificates loaded, size=%d", certs_buf_len);
+            ESP_LOGI(TAG, "GSMA CA certificates loaded, size=%d",
+                     certs_buf_len);
         }
     }
     return 0;
